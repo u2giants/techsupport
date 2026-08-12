@@ -35,6 +35,13 @@ rm -f "$HOME/Library/LaunchAgents/com.user.mount-smb-drives.plist"
 rm -rf "$SCRIPT_DIR"
 rm -f "$HOME/Scripts/mount-smb-drives.sh"
 
+# Remove mounts made by the old setup before using the new, POP-specific names.
+for VOLUME in users files mac styleguides freelancers Photography POP-users POP-files POP-mac POP-styleguides POP-freelancers POP-Photography; do
+  if mount | grep -q " on /Volumes/$VOLUME "; then
+    /sbin/umount "/Volumes/$VOLUME" 2>/dev/null || true
+  fi
+done
+
 mkdir -p "$SCRIPT_DIR" "$PLIST_DIR" "$POP_LINK_DIR"
 
 cat > "$SCRIPT_PATH" <<EOF
@@ -47,6 +54,11 @@ POP_LINK_DIR="\$HOME/Desktop/POP Network Drives"
 
 mkdir -p "\$POP_LINK_DIR"
 
+if ! /usr/bin/nc -z -w 3 "\$SERVER" 445 >/dev/null 2>&1; then
+  echo "POP SMB: NAS is not reachable. Will try again later."
+  exit 0
+fi
+
 mount_share() {
   local CHECK_PATH="\$1"
   local SMB_URL="\$2"
@@ -57,25 +69,30 @@ mount_share() {
     echo "\$CHECK_PATH already mounted"
   else
     echo "Mounting \$SMB_URL"
-    open -g "\$SMB_URL"
-    sleep 5
+    mkdir -p "\$CHECK_PATH"
+    # -N means never show a password box. It uses the password already saved
+    # in the employee's Keychain, or quietly tries again at the next interval.
+    /sbin/mount_smbfs -N "\$SMB_URL" "\$CHECK_PATH" || {
+      echo "POP SMB: could not mount \$LINK_NAME. Will try again later."
+      return 0
+    }
   fi
 
   rm -f "\$POP_LINK_DIR/\$LINK_NAME"
   ln -s "\$TARGET_PATH" "\$POP_LINK_DIR/\$LINK_NAME" 2>/dev/null || true
 }
 
-mount_share "/Volumes/users" "smb://\$SMB_URL_USER@\$SERVER/users" "POP-users" "/Volumes/users/\$SHORT_USER"
-mount_share "/Volumes/files" "smb://\$SMB_URL_USER@\$SERVER/files" "POP-shared" "/Volumes/files"
-mount_share "/Volumes/mac" "smb://\$SMB_URL_USER@\$SERVER/mac" "POP-mac" "/Volumes/mac"
-mount_share "/Volumes/styleguides" "smb://\$SMB_URL_USER@\$SERVER/styleguides" "POP-styleguides" "/Volumes/styleguides"
-mount_share "/Volumes/freelancers" "smb://\$SMB_URL_USER@\$SERVER/freelancers" "POP-freelancers" "/Volumes/freelancers"
-mount_share "/Volumes/Photography" "smb://\$SMB_URL_USER@\$SERVER/Photography" "POP-Photography" "/Volumes/Photography"
+mount_share "/Volumes/POP-users" "//\$SMB_URL_USER@\$SERVER/users" "POP-users" "/Volumes/POP-users/\$SHORT_USER"
+mount_share "/Volumes/POP-files" "//\$SMB_URL_USER@\$SERVER/files" "POP-shared" "/Volumes/POP-files"
+mount_share "/Volumes/POP-mac" "//\$SMB_URL_USER@\$SERVER/mac" "POP-mac" "/Volumes/POP-mac"
+mount_share "/Volumes/POP-styleguides" "//\$SMB_URL_USER@\$SERVER/styleguides" "POP-styleguides" "/Volumes/POP-styleguides"
+mount_share "/Volumes/POP-freelancers" "//\$SMB_URL_USER@\$SERVER/freelancers" "POP-freelancers" "/Volumes/POP-freelancers"
+mount_share "/Volumes/POP-Photography" "//\$SMB_URL_USER@\$SERVER/Photography" "POP-Photography" "/Volumes/POP-Photography"
 
 rm -f "\$POP_LINK_DIR/POP-SharedLic"
-ln -s "/Volumes/files/SharedLic" "\$POP_LINK_DIR/POP-SharedLic" 2>/dev/null || true
-
-open "\$POP_LINK_DIR"
+if mount | grep -q " on /Volumes/POP-files "; then
+  ln -s "/Volumes/POP-files/SharedLic" "\$POP_LINK_DIR/POP-SharedLic" 2>/dev/null || true
+fi
 EOF
 
 chmod +x "$SCRIPT_PATH"
@@ -110,7 +127,19 @@ cat > "$PLIST_PATH" <<EOF
 EOF
 
 echo
-echo "Running first mount now..."
+echo "Saving the SMB password in Keychain..."
+echo "A single Finder password box may appear now. Enter the SMB password and check 'Remember this password in my keychain'."
+open "smb://$SMB_URL_USER@$SERVER/users"
+read -r -p "When the POP-users folder opens in Finder, return here and press Enter..."
+
+# Finder mounted this first connection only to save the password.  Remove that
+# temporary generic mount so the silent job can use its permanent POP name.
+if mount | grep -q " on /Volumes/users "; then
+  /sbin/umount "/Volumes/users" 2>/dev/null || true
+fi
+
+echo
+echo "Running the silent mount now..."
 bash "$SCRIPT_PATH"
 
 echo
@@ -120,7 +149,7 @@ launchctl load "$PLIST_PATH"
 echo
 echo "Done."
 echo
-echo "If macOS asks for the SMB password, use:"
+echo "If the one-time setup password box appeared, use:"
 echo
 echo "Username: $SMB_LOGIN"
 echo "Password: employee SMB/network password"
@@ -128,6 +157,7 @@ echo
 echo "IMPORTANT: check/save 'Remember this password in my keychain'."
 echo
 echo "The automatic reconnect job will run at login and retry every 5 minutes."
+echo "It will not open Finder or show password boxes."
 echo
 echo "POP Network Drives folder:"
 echo "$POP_LINK_DIR"
