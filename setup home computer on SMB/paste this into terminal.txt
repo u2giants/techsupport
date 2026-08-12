@@ -1,3 +1,5 @@
+bash <<'POP_SMB_SETUP'
+
 # POP SMB cleanup + reinstall for macOS
 # CHANGE ONLY THIS ONE LINE PER USER:
 SMB_LOGIN='iml\ftello'
@@ -44,8 +46,10 @@ SERVER='$SERVER'
 SMB_URL_USER='$SMB_URL_USER'
 SHORT_USER='$SHORT_USER'
 POP_LINK_DIR="\$HOME/Desktop/POP Network Drives"
+MOUNT_ROOT="\$HOME/Library/Scripts/POP-SMB/mounts"
 
 mkdir -p "\$POP_LINK_DIR"
+mkdir -p "\$MOUNT_ROOT"
 
 if ! /usr/bin/nc -z -w 3 "\$SERVER" 445 >/dev/null 2>&1; then
   echo "POP SMB: NAS is not reachable. Will try again later."
@@ -75,16 +79,16 @@ mount_share() {
   ln -s "\$TARGET_PATH" "\$POP_LINK_DIR/\$LINK_NAME" 2>/dev/null || true
 }
 
-mount_share "/Volumes/POP-users" "//\$SMB_URL_USER@\$SERVER/users" "POP-users" "/Volumes/POP-users/\$SHORT_USER"
-mount_share "/Volumes/POP-files" "//\$SMB_URL_USER@\$SERVER/files" "POP-shared" "/Volumes/POP-files"
-mount_share "/Volumes/POP-mac" "//\$SMB_URL_USER@\$SERVER/mac" "POP-mac" "/Volumes/POP-mac"
-mount_share "/Volumes/POP-styleguides" "//\$SMB_URL_USER@\$SERVER/styleguides" "POP-styleguides" "/Volumes/POP-styleguides"
-mount_share "/Volumes/POP-freelancers" "//\$SMB_URL_USER@\$SERVER/freelancers" "POP-freelancers" "/Volumes/POP-freelancers"
-mount_share "/Volumes/POP-Photography" "//\$SMB_URL_USER@\$SERVER/Photography" "POP-Photography" "/Volumes/POP-Photography"
+mount_share "\$MOUNT_ROOT/users" "//\$SMB_URL_USER@\$SERVER/users" "POP-users" "\$MOUNT_ROOT/users/\$SHORT_USER"
+mount_share "\$MOUNT_ROOT/files" "//\$SMB_URL_USER@\$SERVER/files" "POP-shared" "\$MOUNT_ROOT/files"
+mount_share "\$MOUNT_ROOT/mac" "//\$SMB_URL_USER@\$SERVER/mac" "POP-mac" "\$MOUNT_ROOT/mac"
+mount_share "\$MOUNT_ROOT/styleguides" "//\$SMB_URL_USER@\$SERVER/styleguides" "POP-styleguides" "\$MOUNT_ROOT/styleguides"
+mount_share "\$MOUNT_ROOT/freelancers" "//\$SMB_URL_USER@\$SERVER/freelancers" "POP-freelancers" "\$MOUNT_ROOT/freelancers"
+mount_share "\$MOUNT_ROOT/Photography" "//\$SMB_URL_USER@\$SERVER/Photography" "POP-Photography" "\$MOUNT_ROOT/Photography"
 
 rm -f "\$POP_LINK_DIR/POP-SharedLic"
-if mount | grep -q " on /Volumes/POP-files "; then
-  ln -s "/Volumes/POP-files/SharedLic" "\$POP_LINK_DIR/POP-SharedLic" 2>/dev/null || true
+if mount | grep -q " on \$MOUNT_ROOT/files "; then
+  ln -s "\$MOUNT_ROOT/files/SharedLic" "\$POP_LINK_DIR/POP-SharedLic" 2>/dev/null || true
 fi
 EOF
 
@@ -151,3 +155,4 @@ echo "$POP_LINK_DIR"
 echo
 
 open "$POP_LINK_DIR"
+POP_SMB_SETUP
