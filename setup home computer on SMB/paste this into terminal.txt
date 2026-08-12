@@ -1,0 +1,136 @@
+# POP SMB cleanup + reinstall for macOS
+# CHANGE ONLY THIS ONE LINE PER USER:
+SMB_LOGIN='iml\ftello'
+
+SERVER='100.107.131.35'
+
+SHORT_USER="${SMB_LOGIN##*\\}"
+SMB_DOMAIN="${SMB_LOGIN%%\\*}"
+SMB_URL_USER="${SMB_DOMAIN};${SHORT_USER}"
+
+SCRIPT_DIR="$HOME/Library/Scripts/POP-SMB"
+SCRIPT_PATH="$SCRIPT_DIR/reconnect-pop-smb.sh"
+PLIST_DIR="$HOME/Library/LaunchAgents"
+PLIST_PATH="$PLIST_DIR/com.popcreations.smb-reconnect.plist"
+POP_LINK_DIR="$HOME/Desktop/POP Network Drives"
+
+echo
+echo "POP SMB setup"
+echo "-------------"
+echo "SMB login:   $SMB_LOGIN"
+echo "Server:      $SERVER"
+echo "Home folder: users/$SHORT_USER"
+echo
+
+echo "Cleaning old POP SMB setup..."
+
+launchctl unload "$PLIST_PATH" 2>/dev/null || true
+launchctl bootout "gui/$(id -u)" "$PLIST_PATH" 2>/dev/null || true
+
+launchctl unload "$HOME/Library/LaunchAgents/com.user.mount-smb-drives.plist" 2>/dev/null || true
+launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.user.mount-smb-drives.plist" 2>/dev/null || true
+
+rm -f "$PLIST_PATH"
+rm -f "$HOME/Library/LaunchAgents/com.user.mount-smb-drives.plist"
+rm -rf "$SCRIPT_DIR"
+rm -f "$HOME/Scripts/mount-smb-drives.sh"
+
+mkdir -p "$SCRIPT_DIR" "$PLIST_DIR" "$POP_LINK_DIR"
+
+cat > "$SCRIPT_PATH" <<EOF
+#!/bin/bash
+
+SERVER='$SERVER'
+SMB_URL_USER='$SMB_URL_USER'
+SHORT_USER='$SHORT_USER'
+POP_LINK_DIR="\$HOME/Desktop/POP Network Drives"
+
+mkdir -p "\$POP_LINK_DIR"
+
+mount_share() {
+  local CHECK_PATH="\$1"
+  local SMB_URL="\$2"
+  local LINK_NAME="\$3"
+  local TARGET_PATH="\$4"
+
+  if mount | grep -q " on \$CHECK_PATH "; then
+    echo "\$CHECK_PATH already mounted"
+  else
+    echo "Mounting \$SMB_URL"
+    open -g "\$SMB_URL"
+    sleep 5
+  fi
+
+  rm -f "\$POP_LINK_DIR/\$LINK_NAME"
+  ln -s "\$TARGET_PATH" "\$POP_LINK_DIR/\$LINK_NAME" 2>/dev/null || true
+}
+
+mount_share "/Volumes/users" "smb://\$SMB_URL_USER@\$SERVER/users" "POP-users" "/Volumes/users/\$SHORT_USER"
+mount_share "/Volumes/files" "smb://\$SMB_URL_USER@\$SERVER/files" "POP-shared" "/Volumes/files"
+mount_share "/Volumes/mac" "smb://\$SMB_URL_USER@\$SERVER/mac" "POP-mac" "/Volumes/mac"
+mount_share "/Volumes/styleguides" "smb://\$SMB_URL_USER@\$SERVER/styleguides" "POP-styleguides" "/Volumes/styleguides"
+mount_share "/Volumes/freelancers" "smb://\$SMB_URL_USER@\$SERVER/freelancers" "POP-freelancers" "/Volumes/freelancers"
+mount_share "/Volumes/Photography" "smb://\$SMB_URL_USER@\$SERVER/Photography" "POP-Photography" "/Volumes/Photography"
+
+rm -f "\$POP_LINK_DIR/POP-SharedLic"
+ln -s "/Volumes/files/SharedLic" "\$POP_LINK_DIR/POP-SharedLic" 2>/dev/null || true
+
+open "\$POP_LINK_DIR"
+EOF
+
+chmod +x "$SCRIPT_PATH"
+
+cat > "$PLIST_PATH" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.popcreations.smb-reconnect</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>$SCRIPT_PATH</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/pop-smb-reconnect.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/pop-smb-reconnect-error.log</string>
+  </dict>
+</plist>
+EOF
+
+echo
+echo "Running first mount now..."
+bash "$SCRIPT_PATH"
+
+echo
+echo "Loading automatic reconnect job..."
+launchctl load "$PLIST_PATH"
+
+echo
+echo "Done."
+echo
+echo "If macOS asks for the SMB password, use:"
+echo
+echo "Username: $SMB_LOGIN"
+echo "Password: employee SMB/network password"
+echo
+echo "IMPORTANT: check/save 'Remember this password in my keychain'."
+echo
+echo "The automatic reconnect job will run at login and retry every 5 minutes."
+echo
+echo "POP Network Drives folder:"
+echo "$POP_LINK_DIR"
+echo
+
+open "$POP_LINK_DIR"
