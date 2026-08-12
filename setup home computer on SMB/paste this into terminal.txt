@@ -35,13 +35,6 @@ rm -f "$HOME/Library/LaunchAgents/com.user.mount-smb-drives.plist"
 rm -rf "$SCRIPT_DIR"
 rm -f "$HOME/Scripts/mount-smb-drives.sh"
 
-# Remove mounts made by the old setup before using the new, POP-specific names.
-for VOLUME in users files mac styleguides freelancers Photography POP-users POP-files POP-mac POP-styleguides POP-freelancers POP-Photography; do
-  if mount | grep -q " on /Volumes/$VOLUME "; then
-    /sbin/umount "/Volumes/$VOLUME" 2>/dev/null || true
-  fi
-done
-
 mkdir -p "$SCRIPT_DIR" "$PLIST_DIR" "$POP_LINK_DIR"
 
 cat > "$SCRIPT_PATH" <<EOF
@@ -131,12 +124,6 @@ echo "Saving the SMB password in Keychain..."
 echo "A single Finder password box may appear now. Enter the SMB password and check 'Remember this password in my keychain'."
 open "smb://$SMB_URL_USER@$SERVER/users"
 read -r -p "When the POP-users folder opens in Finder, return here and press Enter..."
-
-# Finder mounted this first connection only to save the password.  Remove that
-# temporary generic mount so the silent job can use its permanent POP name.
-if mount | grep -q " on /Volumes/users "; then
-  /sbin/umount "/Volumes/users" 2>/dev/null || true
-fi
 
 echo
 echo "Running the silent mount now..."
