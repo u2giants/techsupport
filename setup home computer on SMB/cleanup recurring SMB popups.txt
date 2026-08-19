@@ -1,0 +1,73 @@
+bash <<'POP_SMB_CLEANUP'
+set -u
+
+HOME_DIR="$HOME"
+AGENT_DIR="$HOME_DIR/Library/LaunchAgents"
+STAMP="$(date '+%Y-%m-%d_%H-%M-%S')"
+BACKUP_DIR="$HOME_DIR/Desktop/POP SMB cleanup backup $STAMP"
+BACKUP_AGENTS="$BACKUP_DIR/LaunchAgents"
+REPORT="$BACKUP_DIR/cleanup report.txt"
+USER_ID="$(id -u)"
+
+mkdir -p "$BACKUP_AGENTS"
+
+echo "POP SMB popup cleanup"
+echo "Backup folder: $BACKUP_DIR"
+echo
+echo "This stops and backs up POP SMB reconnect jobs."
+echo "It does not delete NAS files, employee files, Tailscale, or saved passwords."
+echo
+
+STOPPED=0
+
+stop_and_backup_agent() {
+  PLIST="$1"
+  NAME="$(basename "$PLIST")"
+
+  echo "Stopping: $NAME"
+  /bin/launchctl bootout "gui/$USER_ID" "$PLIST" 2>/dev/null || true
+  /bin/launchctl unload "$PLIST" 2>/dev/null || true
+  /bin/mv "$PLIST" "$BACKUP_AGENTS/$NAME"
+  STOPPED=$((STOPPED + 1))
+}
+
+shopt -s nullglob
+for PLIST in "$AGENT_DIR"/*.plist; do
+  if /usr/bin/grep -Eqi '100\.107\.131\.35|mount_smbfs|smb://|POP-SMB|popcreations|mount-smb|reconnect.*smb|smb.*reconnect' "$PLIST"; then
+    stop_and_backup_agent "$PLIST"
+  fi
+done
+
+for SCRIPT in \
+  "$HOME_DIR/Library/Scripts/POP-SMB" \
+  "$HOME_DIR/Scripts/mount-smb-drives.sh"; do
+  if [ -e "$SCRIPT" ]; then
+    NAME="$(basename "$SCRIPT")"
+    echo "Backing up: $NAME"
+    /bin/mv "$SCRIPT" "$BACKUP_DIR/$NAME"
+  fi
+done
+
+if [ -d "$HOME_DIR/Desktop/POP Network Drives" ]; then
+  echo "Backing up old POP Network Drives shortcuts"
+  /bin/mv "$HOME_DIR/Desktop/POP Network Drives" "$BACKUP_DIR/POP Network Drives"
+fi
+
+{
+  echo "POP SMB popup cleanup completed: $(date)"
+  echo "Stopped LaunchAgent jobs: $STOPPED"
+  echo "Backup folder: $BACKUP_DIR"
+  echo
+  echo "Remaining SMB-related LaunchAgent files:"
+  /usr/bin/grep -Eil '100\.107\.131\.35|mount_smbfs|smb://|POP-SMB|popcreations|mount-smb|reconnect.*smb|smb.*reconnect' "$AGENT_DIR"/*.plist 2>/dev/null || true
+} | /usr/bin/tee "$REPORT"
+
+echo
+if [ "$STOPPED" -eq 0 ]; then
+  echo "No SMB reconnect jobs were found in this user's LaunchAgents folder."
+  echo "The popup may be coming from another Mac login item or a device-management setting."
+else
+  echo "Stopped and backed up $STOPPED SMB reconnect job(s)."
+fi
+echo "Restart this Mac now."
+POP_SMB_CLEANUP
